@@ -695,6 +695,37 @@ const chamada_função = transformar(
   }
 );
 
+// Space-separated function call as postfix operation
+const chamada_espaço = transformar(
+  sequência(
+    espaço,
+    alternativa(
+      número_negativo,
+      número,
+      texto
+    ),
+    opcional(espaço),
+  ),
+  ([, arg_fn,]) => (escopo, função) => {
+    const arg_value = arg_fn(escopo);
+    return função(escopo, arg_value);
+  }
+);
+
+// Function reference: (identifier) returns the function object instead of calling it
+const referência_função = transformar(
+  sequência(
+    símbolo("("),
+    opcional(espaço),
+    valor_constante,
+    opcional(espaço),
+    símbolo(")"),
+  ),
+  ([, , fn_name, ,]) => escopo => {
+    return fn_name(escopo);  // Return the function object itself
+  }
+);
+
 const parênteses = transformar(
   sequência(
     símbolo("("),
@@ -728,7 +759,7 @@ const termo1 = transformar(
         tamanho,
         chaves,
         atributo,
-        chamada_função,
+        // chamada_função removed - no more function calls with parentheses
       ),
     ),
   ),
@@ -757,8 +788,83 @@ const termo2 = alternativa(
   parênteses
 );
 
+// Space-separated function application as an operator
+const aplicação_espaço_operador = transformar(
+  sequência(
+    espaço,
+    alternativa(
+      número_negativo,
+      número,
+      texto
+    )
+  ),
+  ([, arg_fn]) => (escopo, função) => {
+    const arg_value = arg_fn(escopo);
+    return função(escopo, arg_value);
+  }
+);
+
+// Space-separated function application: identifier followed by argument (not in key-value context)
+const aplicação_espaço = transformar(
+  sequência(
+    nome,  // Use nome instead of valor_constante to be more specific
+    espaço,
+    alternativa(
+      número_negativo,
+      número,
+      texto
+    )
+  ),
+  ([fn_name, , arg_fn]) => escopo => {
+    // Get the function from the scope
+    let atualEscopo = escopo;
+    let função = undefined;
+    while (atualEscopo) {
+      if (atualEscopo.hasOwnProperty(fn_name)) {
+        função = atualEscopo[fn_name];
+        break;
+      }
+      atualEscopo = atualEscopo.__parent__;
+    }
+    
+    if (typeof função === 'function') {
+      const arg_value = arg_fn(escopo);
+      return função(escopo, arg_value);
+    } else {
+      throw new Error(`${fn_name} não é uma função`);
+    }
+  }
+);
+
+// Test parser with more realistic pattern
+const teste_aplicação = transformar(
+  sequência(
+    símbolo("test_func"),
+    espaço,
+    número
+  ),
+  ([fn_name, , arg_fn]) => escopo => {
+    return () => 42;  // Return a function instead of a number
+  }
+);
+
+const termo_com_aplicação = alternativa(
+  aplicação_espaço,   // Add back at beginning
+  lambda,
+  termo1,
+  número_negativo,
+  número,
+  não,
+  texto,
+  modelo,
+  lista,
+  valor_constante,
+  referência_função,  // Function references
+  parênteses
+);
+
 const termo3 = operação(
-  termo2,
+  termo_com_aplicação,
   alternativa(
     operador("*", (v1, v2) => v1 * v2),
     operador("/", (v1, v2) => v1 / v2),

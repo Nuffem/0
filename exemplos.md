@@ -567,7 +567,7 @@ Funções encapsulam lógica reutilizável.
 ```
 quadrado = x => x * x
 
-quadrado(5)
+quadrado 5
 ---
 25
 ```

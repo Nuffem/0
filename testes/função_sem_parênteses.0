@@ -1,0 +1,23 @@
+(
+dobro = n => n * 2
+triplo = x => x * 3
+saudacao = nome => `Olá, ${nome}!`
+
+// Test basic function calls
+test1 = dobro 5
+test2 = triplo 4
+test3 = saudacao "Maria"
+
+// Test function references
+referencia = (dobro)
+test4 = referencia 7
+
+// Test lists
+lista_ref = { (triplo) 5 }
+lista_call = { dobro 5 }
+
+test5 = lista_ref[1]  // Should be 5
+test6 = lista_call[0] // Should be 10
+
+() => test1  // Should return 10
+)
