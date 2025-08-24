@@ -993,6 +993,7 @@ const etapas = {
         },
         valores_módulos: {},
         módulo_principal_estado: {},
+        estado_módulo_principal: {},
         etapa: "carregar_conteúdos"
       }
     ];
@@ -1152,6 +1153,11 @@ const etapas = {
 
     const valor = corpo(escopo);
 
+    // Check if this module has automaton style and store it in the state
+    // For now, use content-based detection as a simple approach
+    const módulo_conteúdo = estado.conteúdos[endereço];
+    const is_automaton_style = módulo_conteúdo.includes('__automaton_style = 1');
+
     return [
       null,
       {
@@ -1159,6 +1165,10 @@ const etapas = {
         valores_módulos: {
           ...estado.valores_módulos,
           [endereço]: valor
+        },
+        automaton_modules: {
+          ...estado.automaton_modules,
+          [endereço]: is_automaton_style
         },
         etapa: "executar_módulos"
       }
@@ -1169,32 +1179,54 @@ const etapas = {
     { ...estado, etapa: "executar_módulo_principal" }
   ],
   executar_módulo_principal: (retorno, estado) => {
-    // For backward compatibility, if the module is an old-style function that returns effects array,
-    // we need to convert it to the new interface
     const módulo_principal_fn = estado.valores_módulos[estado.módulo_principal];
     
-    // Check if this is the first call by looking for efeitos_módulo_pendentes
-    if (!estado.efeitos_módulo_pendentes) {
-      // First call - get the initial effects from the main module
-      const efeitos_módulo = módulo_principal_fn(estado.módulo_principal_estado);
-      if (!efeitos_módulo || efeitos_módulo.length === 0) {
+    // Check if the module is an automaton (new style) or old style function
+    const is_automaton = estado.automaton_modules && estado.automaton_modules[estado.módulo_principal];
+    
+    if (typeof módulo_principal_fn === 'function' && is_automaton) {
+      // New automaton style: call with [retorno, estado_módulo_principal] and expect {efeito estado}
+      const result = módulo_principal_fn({}, [retorno, estado.estado_módulo_principal]);
+      const efeito = result[0];
+      const novo_estado_módulo = result[1];
+      
+      if (efeito === null) {
         return [null, { ...estado, etapa: "finalizado" }];
       }
+      
       return [
-        null,
+        efeito,
         {
           ...estado,
-          efeitos_módulo_pendentes: efeitos_módulo,
-          etapa: "processar_efeito_principal"
+          estado_módulo_principal: novo_estado_módulo,
+          etapa: "executar_módulo_principal"
         }
       ];
+    } else {
+      // Old style implementation - backward compatibility
+      // Check if this is the first call by looking for efeitos_módulo_pendentes
+      if (!estado.efeitos_módulo_pendentes) {
+        // First call - get the initial effects from the main module
+        const efeitos_módulo = módulo_principal_fn(estado.módulo_principal_estado);
+        if (!efeitos_módulo || efeitos_módulo.length === 0) {
+          return [null, { ...estado, etapa: "finalizado" }];
+        }
+        return [
+          null,
+          {
+            ...estado,
+            efeitos_módulo_pendentes: efeitos_módulo,
+            etapa: "processar_efeito_principal"
+          }
+        ];
+      }
+      
+      // Continue processing if we have pending effects
+      return [
+        null,
+        { ...estado, etapa: "processar_efeito_principal" }
+      ];
     }
-    
-    // Continue processing if we have pending effects
-    return [
-      null,
-      { ...estado, etapa: "processar_efeito_principal" }
-    ];
   },
   processar_efeito_principal: (retorno, estado) => {
     if (!estado.efeitos_módulo_pendentes || estado.efeitos_módulo_pendentes.length === 0) {
