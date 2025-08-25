@@ -543,38 +543,16 @@ const atributo = transformar(
   ([, atributoNome]) => (escopo, objeto) => objeto[atributoNome],
 );
 
-const params_lista_com_parenteses = sequência(
-  símbolo("("),
-  opcional(espaço),
-  nome,
-  opcional(espaço),
-  símbolo(")")
-);
-
-const params_lista_sem_parenteses = nome;
-
 const lambda = transformar(
   sequência(
-    alternativa(
-      params_lista_com_parenteses,
-      params_lista_sem_parenteses
-    ),
+    nome,
     opcional(espaço),
     símbolo("=>"),
     opcional(espaço),
     { analisar: código => expressão.analisar(código) }
   ),
   (valorBrutoLambda) => {
-    const [paramsResultado, , , , corpoExprFunc] = valorBrutoLambda;
-
-    let nomeParam = null;
-    if (Array.isArray(paramsResultado) && paramsResultado[0] === '(') {
-      // Parentheses case: (param) or ()
-      nomeParam = paramsResultado[2] || null;
-    } else {
-      // No parentheses case: param
-      nomeParam = paramsResultado;
-    }
+    const [nomeParam, , , , corpoExprFunc] = valorBrutoLambda;
 
     return definition_scope => {
       return (caller_context, ...valoresArgs) => {
@@ -597,7 +575,7 @@ const lambda = transformar(
 
 const chamada_função = transformar(
   sequência(
-    símbolo("("),
+    símbolo("{"),
     opcional(espaço),
     opcional(
       sequência(
@@ -606,7 +584,7 @@ const chamada_função = transformar(
       )
     ),
     opcional(espaço),
-    símbolo(")"),
+    símbolo("}"),
   ),
   ([, , arg_seq_optional,]) => (escopo, função) => {
     if (arg_seq_optional) {
@@ -1079,13 +1057,18 @@ const etapas = {
     { ...estado, etapa: "executar_módulo_principal" }
   ],
   executar_módulo_principal: (retorno, estado) => {
-    // For backward compatibility, if the module is an old-style function that returns effects array,
-    // we need to convert it to the new interface
     const módulo_principal_fn = estado.valores_módulos[estado.módulo_principal];
     
-    // Check if this is the first call by looking for efeitos_módulo_pendentes
+    // If the main module is not a function, just output its value and finish
+    if (typeof módulo_principal_fn !== 'function') {
+      return [
+        efeitos.escreva(JSON.stringify(módulo_principal_fn)),
+        { ...estado, etapa: "finalizado" }
+      ];
+    }
+    
+    // For function modules (test modules), handle them as before
     if (!estado.efeitos_módulo_pendentes) {
-      // First call - get the initial effects from the main module
       const efeitos_módulo = módulo_principal_fn(estado.módulo_principal_estado);
       if (!efeitos_módulo || efeitos_módulo.length === 0) {
         return [null, { ...estado, etapa: "finalizado" }];
