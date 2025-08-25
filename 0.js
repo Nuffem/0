@@ -587,7 +587,26 @@ const parênteses = transformar(
   sequência(
     símbolo("("),
     opcional(espaço),
-    { analisar: código => expressão.analisar(código) },
+    alternativa(
+      // Space-based function call inside parentheses
+      transformar(
+        sequência(
+          valor_constante,
+          espaço_em_branco,
+          { analisar: código => expressão.analisar(código) },
+        ),
+        ([função_fn, , arg_fn]) => escopo => {
+          const função = função_fn(escopo);
+          const arg_value = arg_fn(escopo);
+          if (typeof função === 'function') {
+            return função(escopo, arg_value);
+          }
+          throw new Error(`Expected function in space-based call: ${função}`);
+        }
+      ),
+      // Regular parenthesized expression
+      { analisar: código => expressão.analisar(código) }
+    ),
     opcional(espaço),
     símbolo(")"),
   ),
@@ -597,6 +616,29 @@ const parênteses = transformar(
     return outer_scope_param => {
       return valor_fn(outer_scope_param);
     };
+  }
+);
+
+// Space-based function call (postfix operation)
+const chamada_função_espacial = transformar(
+  sequência(
+    espaço_em_branco,
+    alternativa(
+      número,
+      texto,
+      valor_constante,
+      parênteses,
+      lista,
+    ),
+  ),
+  ([, arg_fn]) => (escopo, função) => {
+    // Only try to call if it's actually a function
+    if (typeof função === 'function') {
+      const arg_value = arg_fn(escopo);
+      return função(escopo, arg_value);
+    }
+    // If not a function, this should not have matched - return função unchanged
+    return função;
   }
 );
 
@@ -635,8 +677,61 @@ const termo1 = transformar(
   }
 );
 
+// Space-based function call (at term level)
+const chamada_função_termo = transformar(
+  sequência(
+    valor_constante,
+    espaço_em_branco,
+    { analisar: código => expressão.analisar(código) },
+  ),
+  ([função_fn, , arg_fn]) => escopo => {
+    const função = função_fn(escopo);
+    const arg_value = arg_fn(escopo);
+    if (typeof função === 'function') {
+      return função(escopo, arg_value);
+    }
+    throw new Error(`Expected function in space-based call: ${função}`);
+  }
+);
+
 const termo2 = alternativa(
   lambda,
+  // Space-based function call - but only for specific contexts
+  transformar(
+    sequência(
+      nome,
+      espaço_em_branco,
+      alternativa(
+        número,
+        texto,
+        parênteses,
+        lista,
+      ),
+    ),
+    ([função_nome, , arg_fn]) => escopo => {
+      // Resolve the function name
+      let atualEscopo = escopo;
+      let função = undefined;
+      while (atualEscopo) {
+        if (atualEscopo.hasOwnProperty(função_nome)) {
+          função = atualEscopo[função_nome];
+          break;
+        }
+        atualEscopo = atualEscopo.__parent__;
+      }
+      
+      if (função === undefined) {
+        return undefined;
+      }
+      
+      if (typeof função === 'function') {
+        const arg_value = arg_fn(escopo);
+        return função(escopo, arg_value);
+      } else {
+        return função;
+      }
+    }
+  ),
   termo1,
   número_negativo,
   não,
